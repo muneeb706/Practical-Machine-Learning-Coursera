@@ -1,0 +1,131 @@
+---
+title: "Prediction-Assignment-Writeup"
+author: "Muneeb Shahid"
+date: "3/8/2021"
+output: html_document
+---
+
+
+## Introduction  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+In this project I will compare performance of RandomForest, Decision Tree and Generalized Boosting Model.
+
+## Importing Packages
+```{r, cache = T}
+library(caret)
+library(knitr)
+```
+### Downloading and reading data
+```{r, cache = T}
+
+trainDataUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testDataUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+trainingData <- read.csv(url(trainDataUrl),sep = ",", na.strings = c ("","NA"))
+testingData <- read.csv(url(testDataUrl),sep = ",", na.strings = c ("","NA"))
+
+```  
+### Exploring Data
+```{r, cache = T}
+head(trainingData)
+dim(trainingData)
+```
+The training data set contains 19622 records and 160 features. The "classe" variable in the training set is the response variable. 
+
+### Preprocessing the data
+Rremoving columns that contain missing values.
+```{r, cache = T}
+trainProcessed <- trainingData[, colSums(is.na(trainingData)) == 0] 
+testProcessed <- testingData[, colSums(is.na(testingData)) == 0] 
+```  
+Next, we get rid of some columns that do not contribute enough information for prediction.
+
+```{r, cache = T}
+classe <- trainProcessed$classe
+
+trainColsRemoved <- grepl("^X|timestamp|window", names(trainProcessed))
+
+trainProcessed <- trainProcessed[, !trainColsRemoved]
+
+trainProcessed <- trainProcessed[, sapply(trainProcessed, is.numeric)]
+
+trainProcessed$classe <- classe
+
+
+testColsRemoved <- grepl("^X|timestamp|window", names(testProcessed))
+
+testProcessed <- testProcessed[, !testColsRemoved]
+
+testProcessed <- testProcessed[, sapply(testProcessed, is.numeric)]
+
+dim(trainProcessed)
+dim(testProcessed)
+```
+Total Features have been reduced to 53 from 160.
+### Data Partitioning
+Creating 80-20 split.
+```{r, cache = T}
+train_80<-createDataPartition(y=trainProcessed$classe, p=0.80,list=F)
+train<-trainProcessed[train_80,] 
+test<-trainProcessed[-train_80,]
+dim(train)
+dim(test)
+```
+After 80-20 train test split, there are 15699 records in train data and 3923 records in test.
+
+### Cross validating the data
+Cross validation using a random forest done at 10 folds
+```{r, cache = T}
+library(parallel)
+library(doParallel)
+
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+
+set.seed(95014) # For reproducibile purpose
+
+modelFit <- trainControl(method = "cv", number = 5, allowParallel = TRUE, verbose=T)
+
+```
+
+## RandomForest
+
+```{r, cache = T}
+randomForestFit<-train(classe~.,data=train, method="rf", trControl=modelFit, verbose=F)
+```
+
+```{r, cache = T}
+prediction.randomForest<-predict(randomForestFit, newdata=test)
+confusionMatrix(test$classe, prediction.randomForest)
+```
+
+For RandomForest, Acccuracy is 99.6 % approx. Let's make predictions on original test dataset.
+
+### Testing Prediction model on test/valdiation dataset.
+
+```{r, cache = T}
+predictions <- predict(randomForestFit, newdata=testProcessed)
+predictions
+```
+
+
+## GBM
+```{r, cache = T}
+gbmFit <- train(classe~., train, method="gbm", trControl=modelFit, verbose=FALSE)
+prediction.GBM <- predict(gbmFit, test)
+confusionMatrix(prediction.GBM, test$classe)
+```
+
+For Generalized Boosting Model, Acccuracy is 96.3 % approx. Let's make predictions on original test dataset.
+
+### Testing Prediction model on test/valdiation dataset.
+
+```{r, cache = T}
+predictions <- predict(gbmFit, newdata=testProcessed)
+predictions
+```
+
+## Results
+### Random forest, and GBM models give us 99.6 %, and 96.3 % as accuracy, respectively.
+### The expected sample errors for Random forest, and GBM are 0.4 %, and 3.7 % respectively.
